@@ -3,10 +3,12 @@ extern crate dotenv;
 use axum::{routing::get, Router, response::Json, extract::State};
 use serde::Serialize;
 use sqlx::any::install_default_drivers;
-use sqlx::{Any, Pool, Row};
+use sqlx::{Pool, Row, Any as AnySqlx};
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tower_http::cors::{CorsLayer, Any as AnyCors};
+use axum::http::{Method, HeaderValue};
 
 #[derive(Serialize)]
 struct Stats {
@@ -17,7 +19,7 @@ struct Stats {
     // polls_per_guild: Vec<(String, u64)>,
 }
 
-async fn stats(pool: &Pool<Any>) -> Stats {
+async fn stats(pool: &Pool<AnySqlx>) -> Stats {
     let guilds: (i64,) = sqlx::query_as("SELECT COUNT(DISTINCT guild_id) FROM polls")
         .fetch_one(pool).await.unwrap_or((0,));
    
@@ -44,7 +46,7 @@ async fn stats(pool: &Pool<Any>) -> Stats {
     }
 }
 
-async fn stats_handler(State(pool): State<Arc<Pool<Any>>>) -> Json<Stats> {
+async fn stats_handler(State(pool): State<Arc<Pool<AnySqlx>>>) -> Json<Stats> {
     Json(stats(&pool).await)
 }
 
@@ -56,17 +58,32 @@ async fn main() {
     install_default_drivers();
     
     // Create an Any pool directly
-    let pool: Pool<Any> = Pool::connect(&db_url)
+    let pool: Pool<AnySqlx> = Pool::connect(&db_url)
         .await
         .expect("Failed to connect to database");
     
     println!("Connected to database");
    
     let shared_pool = Arc::new(pool);
-   
+    
+    let prod_origin_default = "https://rusty-bote-web-production.up.railway.app".to_string();
+    let prod_origin = env::var("PROD_ORIGIN").unwrap_or_else(|_| prod_origin_default);
+    let dev_origin = "http://localhost:3000".to_string();
+    let rust_env = env::var("RUST_ENV").unwrap_or_else(|_| "development".to_string());
+
+    let mut origins = vec![prod_origin];
+    if rust_env != "production" {
+        origins.push(dev_origin);
+    }
+    let cors = CorsLayer::new()
+        .allow_origin(origins.iter().map(|o| HeaderValue::from_str(o).unwrap()).collect::<Vec<_>>())
+        .allow_methods(vec![Method::GET])
+        .allow_headers(AnyCors);
+
     let app = Router::new()
         .route("/stats", get(stats_handler))
-        .with_state(shared_pool);
+        .with_state(shared_pool)
+        .layer(cors);
    
     let host = env::var("HOST")
         .ok()

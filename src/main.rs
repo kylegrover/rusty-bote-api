@@ -68,7 +68,17 @@ async fn main() {
         .route("/stats", get(stats_handler))
         .with_state(shared_pool);
    
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let host = env::var("HOST")
+        .ok()
+        .and_then(|s| s.parse::<std::net::IpAddr>().ok())
+        .unwrap_or_else(|| "127.0.0.1".parse().unwrap());
+
+    let port = env::var("PORT")
+        .ok()
+        .and_then(|s| s.parse::<u16>().ok())
+        .unwrap_or(3000);
+
+    let addr = SocketAddr::from((host, port));
     println!("StarVote API running at http://{}/stats", addr);
    
     let listener = tokio::net::TcpListener::bind(&addr)

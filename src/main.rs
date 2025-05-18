@@ -4,6 +4,7 @@ use axum::{routing::get, Router, response::Json, extract::State};
 use serde::Serialize;
 use sqlx::any::install_default_drivers;
 use sqlx::{Pool, Row, Any as AnySqlx};
+use std::collections::HashMap;
 use std::env;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -15,7 +16,7 @@ struct Stats {
     guilds: u64,
     polls: u64,
     votes: u64,
-    polls_by_type: Vec<(String, u64)>,
+    polls_by_type: HashMap<String, u64>,
     // polls_per_guild: Vec<(String, u64)>,
 }
 
@@ -31,7 +32,7 @@ async fn stats(pool: &Pool<AnySqlx>) -> Stats {
    
     let polls_by_type = sqlx::query("SELECT voting_method, COUNT(*) as count FROM polls GROUP BY voting_method")
         .fetch_all(pool).await.unwrap_or_default()
-        .into_iter().map(|row| (row.get::<String, _>("voting_method"), row.get::<i64, _>("count") as u64)).collect();
+        .into_iter().map(|row| (row.get::<String, _>("voting_method"), row.get::<i64, _>("count") as u64)).collect::<HashMap<_, _>>();
    
     // let polls_per_guild = sqlx::query("SELECT guild_id, COUNT(*) as count FROM polls GROUP BY guild_id")
     //     .fetch_all(pool).await.unwrap_or_default()
